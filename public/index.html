@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cloudflare AI Chat</title>
+    <link rel="icon" href="./favicon.ico" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap" rel="stylesheet">
+
+    <style>
+      :root {
+        --cf-orange: #f6821f;
+        --cf-orange-2: #ff9a4d;
+        --bg-0: #0b0d10;
+        --bg-1: #101419;
+        --bg-2: #131922;
+        --glass: rgba(255,255,255,.04);
+        --border: #1e2631;
+        --text: #e8eef5;
+        --muted: #9aa7b2;
+        --ring: rgba(246,130,31,.35);
+        --shadow-lg: 0 20px 40px rgba(0,0,0,.45);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(90rem 40rem at 10% -20%, rgba(246,130,31,.08), transparent 60%),
+          radial-gradient(90rem 40rem at 120% 120%, rgba(246,130,31,.06), transparent 60%),
+          var(--bg-0);
+      }
+
+      /* Shell is a strict viewport app: header + chat card + footer
+         The chat card will NOT grow the page; it fills leftover space. */
+      .shell {
+        height: 100dvh; /* key: fixed to viewport */
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 18px clamp(14px, 2vw, 28px);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+        box-shadow: var(--shadow-lg);
+      }
+      .brand-dot {
+        width: 12px; height: 12px; border-radius: 999px;
+        background: var(--cf-orange);
+        box-shadow: 0 0 32px var(--ring), 0 0 6px var(--cf-orange);
+        flex: none;
+      }
+      h1 {
+        font-size: 16px; font-weight: 700; letter-spacing: .2px; margin: 0;
+      }
+      .sub {
+        margin-left: auto; font-size: 12px; color: var(--muted);
+        display: flex; align-items: center; gap: 10px;
+      }
+      .pill {
+        border: 1px solid var(--border); background: #0d1117; color: var(--muted);
+        padding: 4px 8px; border-radius: 999px; font-size: 11px;
+      }
+
+      /* Chat card takes the remaining height */
+      .chat-card {
+        flex: 1;                         /* fill leftover vertical space */
+        min-height: 0;                   /* critical for flex children overflow */
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)),
+          linear-gradient(180deg, var(--bg-1), var(--bg-2));
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Messages area scrolls INSIDE the card; page never grows */
+      .chat-messages {
+        flex: 1;             /* fill available space */
+        min-height: 0;       /* allow overflow */
+        padding: 18px;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+        scrollbar-width: thin;
+        scrollbar-color: #2a3442 transparent;
+      }
+
+      .message {
+        max-width: 75ch; width: fit-content;
+        border: 1px solid var(--border);
+        padding: 12px 14px;
+        border-radius: 14px;
+        line-height: 1.55;
+        background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+        backdrop-filter: saturate(120%) blur(2px);
+      }
+      .message + .message { margin-top: 12px; }
+      .assistant-message { background: linear-gradient(180deg, #141a22, #0f141a); }
+      .user-message {
+        background: linear-gradient(180deg, #18222d, #121a22);
+        margin-left: auto;
+      }
+
+      .typing {
+        display: none; color: var(--muted); font-size: 13px; padding: 0 18px 10px;
+      }
+      .typing.visible { display: flex; align-items: center; gap: 8px; }
+      .dots { display: inline-flex; gap: 3px; }
+      .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--muted); opacity: .5; animation: pulse 1s infinite; }
+      .dot:nth-child(2){ animation-delay: .15s } .dot:nth-child(3){ animation-delay: .3s }
+      @keyframes pulse { 0%,100%{opacity:.35; transform: translateY(0)} 50%{opacity:1; transform: translateY(-2px)} }
+
+      /* Composer is pinned to the bottom of the card; never pushes page height */
+      .composer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid var(--border);
+        background: #0c1116;
+      }
+      #user-input {
+        min-height: 44px; max-height: 200px; resize: none;
+        border: 1px solid var(--border); background: #0e141b; color: var(--text);
+        border-radius: 12px; padding: 12px 14px; outline: none;
+        transition: box-shadow .15s ease, border-color .15s ease;
+        font: 14px/1.5 Inter, system-ui, sans-serif;
+      }
+      #user-input:focus { border-color: var(--cf-orange); box-shadow: 0 0 0 3px var(--ring); }
+
+      /* Modern Send button: subtle glass + orange gradient, with an icon */
+      #send-button {
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 0 16px; border-radius: 12px; border: 1px solid #3a2a1f;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)),
+          radial-gradient(60% 120% at 50% 0%, rgba(246,130,31,.50), rgba(246,130,31,.18)),
+          #1a120b;
+        color: white; font-weight: 700; letter-spacing: .2px;
+        cursor: pointer; transition: transform .06s ease, opacity .2s ease, filter .2s ease;
+        box-shadow: 0 6px 18px rgba(246,130,31,.25);
+      }
+      #send-button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+      #send-button:active { transform: translateY(0); filter: brightness(.98); }
+      #send-button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+      .send-icon {
+        width: 16px; height: 16px; flex: none;
+        filter: drop-shadow(0 0 4px rgba(246,130,31,.6));
+      }
+
+      .visually-hidden { position: absolute; left: -9999px; }
+
+      footer {
+        text-align: center; color: var(--muted); font-size: 12px; padding: 2px 0 0;
+      }
+      a, a:visited { color: var(--cf-orange); text-underline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header role="banner">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <h1>Cloudflare AI Chat</h1>
+        <div class="sub" aria-live="polite">
+          <span class="pill">Workers AI</span>
+          <span class="pill">AI Gateway Guardrails</span>
+        </div>
+      </header>
+
+      <main class="chat-card" role="main" aria-label="Chat">
+        <div id="chat-messages" class="chat-messages" aria-live="polite" aria-atomic="false"></div>
+
+        <div id="typing-indicator" class="typing" aria-live="polite">
+          <span>Assistant is thinking</span>
+          <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        </div>
+
+        <div class="composer">
+          <label class="visually-hidden" for="user-input">Your message</label>
+          <textarea id="user-input" rows="1" placeholder="Ask me anything…" autocomplete="off"></textarea>
+          <button id="send-button" title="Send (Enter)">
+            <svg class="send-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M3 11.5l17-8-7.5 17-1.5-6.5L3 11.5z" stroke="white" stroke-width="1.6" />
+            </svg>
+            Send
+          </button>
+        </div>
+      </main>
+
+      <footer role="contentinfo">
+        <span>Cloudflare Workers AI Chat Template © 2025</span>
+      </footer>
+    </div>
+
+    <script src="chat.js" defer></script>
+  </body>
+</html>
